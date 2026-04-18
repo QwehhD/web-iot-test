@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 
+// Inisialisasi Supabase dengan config tambahan untuk stabilitas realtime
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -12,13 +13,7 @@ const supabase = createClient(
       params: {
         eventsPerSecond: 10,
       },
-    },
-    // Tambahkan ini untuk memastikan header terkirim
-    global: {
-      headers: {
-        'x-application-name': 'iot-dashboard',
-      },
-    },
+    }
   }
 );
 
@@ -27,62 +22,133 @@ export default function DashboardPage() {
   const [status, setStatus] = useState("Connecting...");
 
   useEffect(() => {
-    // 1. Ambil Data Awal
-    const getData = async () => {
-      const { data } = await supabase.from('sensor_logs').select('*').order('id', { ascending: true });
-      if (data) setLogs(data);
-    };
-    getData();
+    // 1. Ambil data awal saat pertama kali load
+    const fetchInitialData = async () => {
+      console.log("Mengambil data awal...");
+      const { data, error } = await supabase
+        .from('sensor_logs')
+        .select('*')
+        .order('id', { ascending: true });
 
-    // 2. Setup Realtime
+      if (error) {
+        console.error("Gagal ambil data awal:", error.message);
+      } else if (data) {
+        setLogs(data);
+      }
+    };
+
+    fetchInitialData();
+
+    // 2. Setup Realtime Listener
+    // Kita kasih nama channel unik 'iot_monitor'
     const channel = supabase
-      .channel('db_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'sensor_logs' }, 
+      .channel('iot_monitor')
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', // Menangkap INSERT, UPDATE, dan DELETE
+          schema: 'public', 
+          table: 'sensor_logs' 
+        },
         (payload) => {
-          console.log("Change received!", payload);
-          if (payload.eventType === 'UPDATE') {
-            setLogs((prev) => prev.map(item => item.id === payload.new.id ? payload.new : item));
-          } else if (payload.eventType === 'INSERT') {
-            setLogs((prev) => [...prev, payload.new]);
+          console.log('ADA SINYAL MASUK DARI DATABASE:', payload);
+
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            const dataBaru = payload.new;
+            
+            setLogs((prev) => {
+              // Cek apakah ID data yang masuk sudah ada di layar?
+              const isExist = prev.find(item => item.id === dataBaru.id);
+
+              if (isExist) {
+                // Jika sudah ada (UPDATE), ganti baris yang lama dengan yang baru
+                return prev.map((item) => 
+                  item.id === dataBaru.id ? { ...item, ...dataBaru } : item
+                );
+              } else {
+                // Jika ID baru (INSERT), tambahkan ke daftar
+                return [...prev, dataBaru];
+              }
+            });
           }
         }
       )
       .subscribe((status) => {
         setStatus(status);
-        console.log("Realtime status:", status);
+        console.log("Status Koneksi Realtime:", status);
       });
 
-    return () => { supabase.removeChannel(channel); };
+    // Cleanup saat user pindah halaman atau refresh
+    return () => {
+      console.log("Menutup koneksi realtime...");
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-white p-10 font-sans">
-      <div className="max-w-xl mx-auto">
-        <div className="flex justify-between items-end mb-10">
+    <div className="min-h-screen bg-slate-950 text-white p-6 md:p-12 font-sans">
+      <div className="max-w-3xl mx-auto">
+        
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
           <div>
-            <h1 className="text-4xl font-black italic tracking-tighter text-cyan-400">DASHBOARD_IO</h1>
-            <p className="text-slate-500 text-xs mt-1">Status: <span className={status === 'SUBSCRIBED' ? 'text-green-500' : 'text-red-500'}>{status}</span></p>
+            <h1 className="text-4xl font-black tracking-tighter text-white">
+              IOT_<span className="text-cyan-400">DASHBOARD</span>
+            </h1>
+            <div className="flex items-center gap-2 mt-1">
+              <div className={`h-2 w-2 rounded-full ${status === 'SUBSCRIBED' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+              <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                Network Status: <span className={status === 'SUBSCRIBED' ? 'text-green-400' : 'text-red-400'}>{status}</span>
+              </p>
+            </div>
           </div>
-          <div className="text-right text-[10px] text-slate-700 font-mono">
-            SMK TELKOM MALANG // 2026
+          <div className="text-right">
+            <p className="text-slate-700 text-[10px] font-bold tracking-widest uppercase">
+              SMK Telkom Malang // Student Project
+            </p>
           </div>
+        </header>
+
+        {/* Monitoring Cards */}
+        <div className="grid gap-6">
+          {logs.length === 0 ? (
+            <div className="p-10 border-2 border-dashed border-slate-800 rounded-3xl text-center">
+              <p className="text-slate-600 animate-pulse">Menunggu data dari database...</p>
+            </div>
+          ) : (
+            logs.map((log) => (
+              <div 
+                key={log.id} 
+                className="group bg-slate-900/40 border border-slate-800 p-8 rounded-[2rem] flex justify-between items-center transition-all hover:border-cyan-500/30 hover:bg-slate-900/60 shadow-xl"
+              >
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-500 text-[10px] font-bold border border-cyan-500/20 uppercase">
+                      ID: {log.id}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-200 uppercase tracking-tight">
+                    {log.sensor_type || "Unknown Sensor"}
+                  </h2>
+                  <p className="text-slate-600 text-[10px] mt-2 font-mono">
+                    SYNC_TIME: {new Date(log.created_at).toLocaleTimeString('id-ID')}
+                  </p>
+                </div>
+
+                <div className="flex items-baseline gap-1">
+                  <span className="text-7xl font-black tabular-nums text-white group-hover:text-cyan-400 transition-colors">
+                    {log.value}
+                  </span>
+                  <span className="text-xl font-bold text-slate-700">%</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <div className="grid gap-6">
-          {logs.map((log) => (
-            <div key={log.id} className="bg-slate-900/50 border border-slate-800 p-8 rounded-3xl flex justify-between items-center backdrop-blur-sm shadow-2xl shadow-cyan-500/5">
-              <div>
-                <h2 className="text-slate-400 text-sm font-bold uppercase tracking-widest">{log.sensor_type}</h2>
-                <p className="text-slate-600 text-[10px] mt-1 font-mono">ID: {log.id} // LAST_UPDATE: {new Date(log.created_at).toLocaleTimeString()}</p>
-              </div>
-              <div className="flex items-baseline">
-                <span className="text-7xl font-black tabular-nums tracking-tighter">{log.value}</span>
-                <span className="text-cyan-600 font-bold ml-2">%</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <footer className="mt-12 text-center text-slate-700 text-[9px] uppercase tracking-[0.2em]">
+          Data terupdate secara otomatis melalui Supabase Realtime Engine
+        </footer>
       </div>
     </div>
   );
