@@ -12,8 +12,13 @@ const supabase = createClient(
       params: {
         eventsPerSecond: 10,
       },
-      timeout: 30000, // Kita kasih waktu napas lebih lama (30 detik)
-    }
+    },
+    // Tambahkan ini untuk memastikan header terkirim
+    global: {
+      headers: {
+        'x-application-name': 'iot-dashboard',
+      },
+    },
   }
 );
 
