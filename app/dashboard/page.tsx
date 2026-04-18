@@ -6,7 +6,15 @@ import { useEffect, useState } from 'react';
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { auth: { persistSession: false } }
+  {
+    auth: { persistSession: false },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+      timeout: 30000, // Kita kasih waktu napas lebih lama (30 detik)
+    }
+  }
 );
 
 export default function DashboardPage() {
