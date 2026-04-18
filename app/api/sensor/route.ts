@@ -6,34 +6,57 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+const isAuthorized = (req: Request) => {
+  const apiKey = req.headers.get('x-api-key')
+  return apiKey === process.env.API_KEY
+}
+
 export async function POST(request: Request) {
   try {
-    
-    const apiKey = request.headers.get('x-api-key')
-    
-    if (apiKey !== process.env.API_KEY) {
-      return NextResponse.json(
-        { message: "Akses ditolak: Key tidak valid" }, 
-        { status: 401 }
-      )
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ message: "Akses ditolak" }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { type, val } = body
+    const { type, val } = await request.json()
 
     const { error } = await supabase
       .from('sensor_logs')
       .insert([{ sensor_type: type, value: val }])
 
     if (error) throw error
-
-    return NextResponse.json({ message: "Data berhasil masuk!" }, { status: 200 })
+    return NextResponse.json({ message: "Data baru berhasil masuk!" }, { status: 200 })
 
   } catch (err: any) {
+    return NextResponse.json({ message: "Gagal POST", error: err.message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ message: "Akses ditolak" }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const idParam = searchParams.get('id')
     
-    return NextResponse.json(
-      { message: "Terjadi kesalahan internal", error: err.message }, 
-      { status: 500 }
-    )
+    const id = idParam ? idParam.replace('eq.', '') : null
+
+    if (!id) {
+      return NextResponse.json({ message: "ID tidak ditemukan di URL" }, { status: 400 })
+    }
+
+    const { value } = await request.json()
+
+    const { error } = await supabase
+      .from('sensor_logs')
+      .update({ value: value })
+      .eq('id', id)
+
+    if (error) throw error
+    return NextResponse.json({ message: "Data berhasil di-update!" }, { status: 200 })
+
+  } catch (err: any) {
+    return NextResponse.json({ message: "Gagal PATCH", error: err.message }, { status: 500 })
   }
 }
