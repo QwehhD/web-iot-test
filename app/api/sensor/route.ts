@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    // 2. Validasi API Key (Gembok)
+    
     const apiKey = request.headers.get('x-api-key')
     
     if (apiKey !== process.env.API_KEY) {
