@@ -3,120 +3,73 @@
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 
-// Inisialisasi Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { persistSession: false } }
 );
 
 export default function DashboardPage() {
   const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("Connecting...");
 
   useEffect(() => {
-    // 1. Ambil data awal
-    const fetchInitialData = async () => {
-      const { data, error } = await supabase
-        .from('sensor_logs')
-        .select('*')
-        .order('id', { ascending: true }); // Urutkan berdasarkan ID saja
-
-      if (!error && data) {
-        setLogs(data);
-      }
-      setLoading(false);
+    // 1. Ambil Data Awal
+    const getData = async () => {
+      const { data } = await supabase.from('sensor_logs').select('*').order('id', { ascending: true });
+      if (data) setLogs(data);
     };
+    getData();
 
-    fetchInitialData();
-
-    // 2. Setup Realtime Listener untuk UPDATE
+    // 2. Setup Realtime
     const channel = supabase
-      .channel('realtime-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // Menangkap INSERT, UPDATE, maupun DELETE
-          schema: 'public',
-          table: 'sensor_logs',
-        },
+      .channel('db_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'sensor_logs' }, 
         (payload) => {
-          console.log('Perubahan terdeteksi:', payload);
-
-          if (payload.eventType === 'INSERT') {
-            // Jika ada data baru, tambahkan ke list
-            setLogs((prev) => [payload.new, ...prev]);
-          } 
-          else if (payload.eventType === 'UPDATE') {
-            // Jika data di-update, cari ID yang cocok dan ganti nilainya
-            setLogs((prev) =>
-              prev.map((item) =>
-                item.id === payload.new.id ? payload.new : item
-              )
-            );
+          console.log("Change received!", payload);
+          if (payload.eventType === 'UPDATE') {
+            setLogs((prev) => prev.map(item => item.id === payload.new.id ? payload.new : item));
+          } else if (payload.eventType === 'INSERT') {
+            setLogs((prev) => [...prev, payload.new]);
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setStatus(status);
+        console.log("Realtime status:", status);
+      });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  if (loading) return (
-    <div className="flex min-h-screen bg-slate-950 items-center justify-center text-cyan-500">
-      <p className="animate-bounce">Loading Dashboard...</p>
-    </div>
-  );
-
   return (
-    <div className="p-8 font-sans bg-slate-950 min-h-screen text-white">
-      <div className="max-w-2xl mx-auto">
-        <header className="flex justify-between items-center mb-8">
+    <div className="min-h-screen bg-black text-white p-10 font-sans">
+      <div className="max-w-xl mx-auto">
+        <div className="flex justify-between items-end mb-10">
           <div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
-              Smart <span className="text-cyan-400">Monitor</span>
-            </h1>
-            <p className="text-slate-500 text-sm">Update Mode: Enabled</p>
+            <h1 className="text-4xl font-black italic tracking-tighter text-cyan-400">DASHBOARD_IO</h1>
+            <p className="text-slate-500 text-xs mt-1">Status: <span className={status === 'SUBSCRIBED' ? 'text-green-500' : 'text-red-500'}>{status}</span></p>
           </div>
-          <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-            <span className="text-[10px] font-mono text-green-500 uppercase">Live Connection</span>
+          <div className="text-right text-[10px] text-slate-700 font-mono">
+            SMK TELKOM MALANG // 2026
           </div>
-        </header>
+        </div>
 
-        <div className="grid gap-4">
+        <div className="grid gap-6">
           {logs.map((log) => (
-            <div 
-              key={log.id} 
-              className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex justify-between items-center hover:border-cyan-500/50 transition-all shadow-lg"
-            >
+            <div key={log.id} className="bg-slate-900/50 border border-slate-800 p-8 rounded-3xl flex justify-between items-center backdrop-blur-sm shadow-2xl shadow-cyan-500/5">
               <div>
-                <p className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-1">
-                  Sensor ID: {log.id}
-                </p>
-                <h2 className="text-xl font-bold text-slate-200">{log.sensor_type}</h2>
-                <p className="text-[10px] text-slate-600 mt-2">
-                  Last Sync: {new Date(log.created_at).toLocaleTimeString()}
-                </p>
+                <h2 className="text-slate-400 text-sm font-bold uppercase tracking-widest">{log.sensor_type}</h2>
+                <p className="text-slate-600 text-[10px] mt-1 font-mono">ID: {log.id} // LAST_UPDATE: {new Date(log.created_at).toLocaleTimeString()}</p>
               </div>
-              
-              <div className="text-right">
-                <span className="text-5xl font-black text-cyan-400 tabular-nums">
-                  {log.value}
-                </span>
-                <span className="text-cyan-900 ml-1 font-bold">%</span>
+              <div className="flex items-baseline">
+                <span className="text-7xl font-black tabular-nums tracking-tighter">{log.value}</span>
+                <span className="text-cyan-600 font-bold ml-2">%</span>
               </div>
             </div>
           ))}
         </div>
-
-        {logs.length === 0 && (
-          <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
-            <p className="text-slate-600 text-sm">Tidak ada baris data ditemukan di database.</p>
-            <p className="text-slate-700 text-xs mt-1">Pastikan ID 1 sudah dibuat secara manual.</p>
-          </div>
-        )}
       </div>
     </div>
   );
