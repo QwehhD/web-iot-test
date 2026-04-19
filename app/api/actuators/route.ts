@@ -8,7 +8,11 @@ const supabase = createClient(
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const name = searchParams.get('name');
+  let name = searchParams.get('name');
+
+  if (name && name.startsWith('eq.')) {
+    name = name.split('.')[1];
+  }
 
   const { data, error } = await supabase
     .from('actuators')
@@ -22,8 +26,12 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   const { searchParams } = new URL(request.url);
-  const name = searchParams.get('name');
+  let name = searchParams.get('name');
   const body = await request.json();
+
+  if (name && name.startsWith('eq.')) {
+    name = name.split('.')[1];
+  }
 
   const { data, error } = await supabase
     .from('actuators')
