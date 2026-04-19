@@ -47,21 +47,34 @@ export default function DashboardPage() {
     };
   }, []);
 
-
   const handleColorChange = async (hex: string) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+    // Validasi hex untuk menghindari error slice
+    if (!hex.startsWith('#')) return;
 
-  setIsUpdating(true);
-  const { error } = await supabase
-    .from('actuators')
-    .update({ red_val: r, green_val: g, blue_val: b })
-    .eq('name', 'room_rgb');
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
 
-  if (error) console.error(error.message);
-  setIsUpdating(false);
-};
+    setIsUpdating(true);
+    
+    // SINKRONKAN: Nama di .eq() harus sama dengan di Database & ESP32
+    const { error } = await supabase
+      .from('actuators')
+      .update({ 
+        red_val: r, 
+        green_val: g, 
+        blue_val: b 
+      })
+      .eq('name', 'RGB_ESP32-S3'); 
+
+    if (error) {
+      console.error("Gagal update:", error.message);
+    } else {
+      console.log(`Updated to R:${r} G:${g} B:${b}`);
+    }
+    
+    setIsUpdating(false);
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-12 font-sans selection:bg-cyan-500/30">
@@ -122,21 +135,21 @@ export default function DashboardPage() {
             <div className="relative group">
               <input 
                 type="color" 
-                className="w-24 h-24 rounded-full bg-transparent cursor-pointer border-4 border-slate-800 transition-transform hover:scale-105"
+                className="w-24 h-24 rounded-full bg-transparent cursor-pointer border-4 border-slate-800 transition-transform hover:scale-105 overflow-hidden"
                 defaultValue="#00ffff"
-                onChange={(e) => handleColorChange(e.target.value)}
+                onInput={(e) => handleColorChange((e.target as HTMLInputElement).value)}
               />
               <div className="absolute -inset-2 bg-cyan-500/20 rounded-full blur-xl -z-10 group-hover:bg-cyan-500/40 transition-all"></div>
             </div>
             
             <div className="flex-1">
               <p className="text-slate-400 text-sm mb-2">Pilih warna untuk mengubah suasana ruangan secara realtime.</p>
-              <div className="flex gap-2">
-                {['#ff0000', '#00ff00', '#0000ff', '#ffffff'].map((color) => (
+              <div className="flex gap-2 flex-wrap">
+                {['#ff0000', '#00ff00', '#0000ff', '#ffffff', '#ffa500'].map((color) => (
                   <button 
                     key={color}
                     onClick={() => handleColorChange(color)}
-                    className="w-8 h-8 rounded-lg border border-white/10 hover:scale-110 transition-transform"
+                    className="w-8 h-8 rounded-lg border border-white/10 hover:scale-110 active:scale-95 transition-transform"
                     style={{ backgroundColor: color }}
                   />
                 ))}
