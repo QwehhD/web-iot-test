@@ -47,18 +47,18 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Fungsi untuk update warna RGB ke database
+
   const handleColorChange = async (hex: string) => {
-    // Konversi HEX ke RGB
+
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
 
     setIsUpdating(true);
     const { error } = await supabase
-      .from('sensor_logs')
+      .from('actuators')
       .update({ red_val: r, green_val: g, blue_val: b })
-      .eq('id', 1); // Asumsi sensor ID 1 adalah unit ESP32 kamu
+      .eq('id', 1);
 
     if (error) console.error("Gagal update warna:", error.message);
     setIsUpdating(false);
@@ -82,7 +82,7 @@ export default function DashboardPage() {
           </div>
           <div className="text-right hidden md:block">
             <p className="text-slate-700 text-[10px] font-bold tracking-widest uppercase">
-              SMK TELKOM MALANG // 2026
+              Be Smart // 2026
             </p>
           </div>
         </header>
