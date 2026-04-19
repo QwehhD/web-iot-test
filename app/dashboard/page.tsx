@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
+import mqtt from 'mqtt';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,40 +16,40 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchInitialData = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('sensor_logs')
         .select('*')
         .order('id', { ascending: true });
-
-      if (!error && data) setLogs(data);
+      if (data) setLogs(data);
     };
-
     fetchInitialData();
 
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'sensor_logs' },
-        (payload) => {
-          setLogs((prev) => 
-            prev.map((item) => 
-              item.id === payload.new.id ? { ...item, ...payload.new } : item
-            )
-          );
-        }
-      )
-      .subscribe((status) => {
-        setStatus(status);
-      });
+    const mqttClient = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
+      username: process.env.NEXT_PUBLIC_MQTT_USER,
+    });
+
+    mqttClient.on("connect", () => {
+      setStatus("SUBSCRIBED");
+      mqttClient.subscribe("oldynew/sensor/pot");
+    });
+
+    mqttClient.on("message", (topic, message) => {
+      if (topic === "oldynew/sensor/pot") {
+        const data = JSON.parse(message.toString());
+        setLogs((prev) => 
+          prev.map((item) => 
+            item.sensor_type === "Potentiometer" ? { ...item, value: data.value } : item
+          )
+        );
+      }
+    });
 
     return () => {
-      supabase.removeAllChannels();
+      mqttClient.end();
     };
   }, []);
 
   const handleColorChange = async (hex: string) => {
-    // Validasi hex untuk menghindari error slice
     if (!hex.startsWith('#')) return;
 
     const r = parseInt(hex.slice(1, 3), 16);
@@ -57,20 +58,17 @@ export default function DashboardPage() {
 
     setIsUpdating(true);
     
-    // SINKRONKAN: Nama di .eq() harus sama dengan di Database & ESP32
-    const { error } = await supabase
-      .from('actuators')
-      .update({ 
-        red_val: r, 
-        green_val: g, 
-        blue_val: b 
-      })
-      .eq('name', 'RGB_ESP32-S3'); 
-
-    if (error) {
-      console.error("Gagal update:", error.message);
-    } else {
-      console.log(`Updated to R:${r} G:${g} B:${b}`);
+    try {
+      await fetch("/api/mqtt/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: "oldynew/actuator/rgb",
+          message: { red_val: r, green_val: g, blue_val: b }
+        }),
+      });
+    } catch (error) {
+      console.error(error);
     }
     
     setIsUpdating(false);
@@ -124,7 +122,6 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* --- KONTROL RGB LED --- */}
         <div className="bg-slate-900/80 border border-cyan-500/20 p-8 rounded-[2.5rem] backdrop-blur-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold tracking-tight uppercase">Room Lighting Control</h3>
@@ -160,7 +157,7 @@ export default function DashboardPage() {
 
         <footer className="mt-20 opacity-20 hover:opacity-100 transition-opacity text-center pb-12">
           <p className="text-[9px] uppercase tracking-[0.5em] text-slate-500">
-            Realtime Data via Supabase Walrus Engine
+            Realtime Data via MQTT WebSocket Engine
           </p>
         </footer>
       </div>
