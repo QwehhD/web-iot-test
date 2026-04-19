@@ -49,20 +49,19 @@ export default function DashboardPage() {
 
 
   const handleColorChange = async (hex: string) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
 
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
+  setIsUpdating(true);
+  const { error } = await supabase
+    .from('actuators')
+    .update({ red_val: r, green_val: g, blue_val: b })
+    .eq('name', 'room_rgb');
 
-    setIsUpdating(true);
-    const { error } = await supabase
-      .from('actuators')
-      .update({ red_val: r, green_val: g, blue_val: b })
-      .eq('id', 1);
-
-    if (error) console.error("Gagal update warna:", error.message);
-    setIsUpdating(false);
-  };
+  if (error) console.error(error.message);
+  setIsUpdating(false);
+};
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-12 font-sans selection:bg-cyan-500/30">
