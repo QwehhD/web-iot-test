@@ -30,12 +30,15 @@ export default function DashboardPage() {
     };
     fetchInitialData();
 
-    // 2. Koneksi MQTT
+    // 2. Koneksi MQTT dengan proteksi tambahan
+    // Browser butuh clientId unik dan penegasan protokol wss
     const mqttClient = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
       username: process.env.NEXT_PUBLIC_MQTT_USER,
-      password: process.env.NEXT_PUBLIC_MQTT_PASSWORD, // Pastikan env ini ada jika pakai pass
+      password: process.env.NEXT_PUBLIC_MQTT_PASSWORD,
+      clientId: `nextjs_client_${Math.random().toString(16).slice(3)}`,
       clean: true,
-      connectTimeout: 4000,
+      connectTimeout: 10000, // Beri waktu lebih lama untuk handshake
+      reconnectPeriod: 1000,
     });
 
     mqttClient.on("connect", () => {
@@ -60,7 +63,7 @@ export default function DashboardPage() {
           
           setLogs((prev) => {
             return prev.map((item) => {
-              // Validasi nama sensor_type HARUS sama dengan di DB
+              // Pastikan "Potentiometer" sama persis dengan yang di database
               if (item.sensor_type === "Potentiometer") {
                 console.log("🎯 Mengupdate Potentiometer ke:", data.value);
                 return { ...item, value: data.value };
@@ -75,7 +78,10 @@ export default function DashboardPage() {
     });
 
     return () => {
-      if (mqttClient) mqttClient.end();
+      if (mqttClient) {
+        console.log("Cleaning up MQTT connection...");
+        mqttClient.end();
+      }
     };
   }, []);
 
