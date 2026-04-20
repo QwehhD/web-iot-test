@@ -30,14 +30,13 @@ export default function DashboardPage() {
     };
     fetchInitialData();
 
-    // 2. Koneksi MQTT dengan proteksi tambahan
-    // Browser butuh clientId unik dan penegasan protokol wss
+    // 2. Koneksi MQTT
     const mqttClient = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
       username: process.env.NEXT_PUBLIC_MQTT_USER,
       password: process.env.NEXT_PUBLIC_MQTT_PASSWORD,
       clientId: `nextjs_client_${Math.random().toString(16).slice(3)}`,
       clean: true,
-      connectTimeout: 10000, // Beri waktu lebih lama untuk handshake
+      connectTimeout: 10000,
       reconnectPeriod: 1000,
     });
 
@@ -52,7 +51,7 @@ export default function DashboardPage() {
       setStatus("ERROR");
     });
 
-    // 3. Logika Terima Pesan
+    // 3. Logika Terima Pesan - DIPERBAIKI
     mqttClient.on("message", (topic, message) => {
       const rawPayload = message.toString();
       console.log(`📩 Pesan masuk di [${topic}]:`, rawPayload);
@@ -63,9 +62,10 @@ export default function DashboardPage() {
           
           setLogs((prev) => {
             return prev.map((item) => {
-              // Pastikan "Potentiometer" sama persis dengan yang di database
-              if (item.sensor_type === "Potentiometer") {
-                console.log("🎯 Mengupdate Potentiometer ke:", data.value);
+              // Pakai .toLowerCase() & .trim() supaya aman dari salah ketik di database
+              const dbSensorType = (item.sensor_type || "").toLowerCase().trim();
+              if (dbSensorType === "potentiometer") {
+                console.log("🎯 Match! Mengupdate UI ke:", data.value);
                 return { ...item, value: data.value };
               }
               return item;
@@ -78,10 +78,7 @@ export default function DashboardPage() {
     });
 
     return () => {
-      if (mqttClient) {
-        console.log("Cleaning up MQTT connection...");
-        mqttClient.end();
-      }
+      if (mqttClient) mqttClient.end();
     };
   }, []);
 
@@ -93,9 +90,10 @@ export default function DashboardPage() {
     const b = parseInt(hex.slice(5, 7), 16);
 
     setIsUpdating(true);
-    console.log("Publishing RGB:", { r, g, b });
     
     try {
+      // PERINGATAN: Pastikan API Route kamu sudah menggunakan 
+      // variabel env TANPA NEXT_PUBLIC_ agar tidak Error 500
       const res = await fetch("/api/mqtt/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -104,9 +102,11 @@ export default function DashboardPage() {
           message: { red_val: r, green_val: g, blue_val: b }
         }),
       });
-      if (!res.ok) throw new Error("Gagal publish");
+      
+      if (!res.ok) throw new Error(`Server Error: ${res.status}`);
+      console.log("✅ RGB Published successfully");
     } catch (error) {
-      console.error("RGB Publish Error:", error);
+      console.error("❌ RGB Publish Error:", error);
     } finally {
       setIsUpdating(false);
     }
