@@ -30,11 +30,11 @@ export default function DashboardPage() {
 
     mqttClient.on("connect", () => {
       setStatus("SUBSCRIBED");
-      mqttClient.subscribe("oldynew/sensor/pot");
+      mqttClient.subscribe("monitor/sensor/pot");
     });
 
     mqttClient.on("message", (topic, message) => {
-      if (topic === "oldynew/sensor/pot") {
+      if (topic === "monitor/sensor/pot") {
         const data = JSON.parse(message.toString());
         setLogs((prev) => 
           prev.map((item) => 
@@ -63,7 +63,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: "oldynew/actuator/rgb",
+          topic: "monitor/actuator/rgb",
           message: { red_val: r, green_val: g, blue_val: b }
         }),
       });
