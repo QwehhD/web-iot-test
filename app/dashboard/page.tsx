@@ -15,37 +15,67 @@ export default function DashboardPage() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
+    // 1. Ambil Data Awal dari Supabase
     const fetchInitialData = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('sensor_logs')
         .select('*')
         .order('id', { ascending: true });
-      if (data) setLogs(data);
+      
+      if (error) console.error("Supabase Error:", error);
+      if (data) {
+        console.log("Data Awal Supabase:", data);
+        setLogs(data);
+      }
     };
     fetchInitialData();
 
+    // 2. Koneksi MQTT
     const mqttClient = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
       username: process.env.NEXT_PUBLIC_MQTT_USER,
+      password: process.env.NEXT_PUBLIC_MQTT_PASSWORD, // Pastikan env ini ada jika pakai pass
+      clean: true,
+      connectTimeout: 4000,
     });
 
     mqttClient.on("connect", () => {
+      console.log("✅ MQTT Connected!");
       setStatus("SUBSCRIBED");
       mqttClient.subscribe("monitor/sensor/pot");
     });
 
+    mqttClient.on("error", (err) => {
+      console.error("❌ MQTT Connection Error:", err);
+      setStatus("ERROR");
+    });
+
+    // 3. Logika Terima Pesan
     mqttClient.on("message", (topic, message) => {
+      const rawPayload = message.toString();
+      console.log(`📩 Pesan masuk di [${topic}]:`, rawPayload);
+
       if (topic === "monitor/sensor/pot") {
-        const data = JSON.parse(message.toString());
-        setLogs((prev) => 
-          prev.map((item) => 
-            item.sensor_type === "Potentiometer" ? { ...item, value: data.value } : item
-          )
-        );
+        try {
+          const data = JSON.parse(rawPayload);
+          
+          setLogs((prev) => {
+            return prev.map((item) => {
+              // Validasi nama sensor_type HARUS sama dengan di DB
+              if (item.sensor_type === "Potentiometer") {
+                console.log("🎯 Mengupdate Potentiometer ke:", data.value);
+                return { ...item, value: data.value };
+              }
+              return item;
+            });
+          });
+        } catch (e) {
+          console.error("⚠️ Format pesan bukan JSON valid:", rawPayload);
+        }
       }
     });
 
     return () => {
-      mqttClient.end();
+      if (mqttClient) mqttClient.end();
     };
   }, []);
 
@@ -57,9 +87,10 @@ export default function DashboardPage() {
     const b = parseInt(hex.slice(5, 7), 16);
 
     setIsUpdating(true);
+    console.log("Publishing RGB:", { r, g, b });
     
     try {
-      await fetch("/api/mqtt/publish", {
+      const res = await fetch("/api/mqtt/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,11 +98,12 @@ export default function DashboardPage() {
           message: { red_val: r, green_val: g, blue_val: b }
         }),
       });
+      if (!res.ok) throw new Error("Gagal publish");
     } catch (error) {
-      console.error(error);
+      console.error("RGB Publish Error:", error);
+    } finally {
+      setIsUpdating(false);
     }
-    
-    setIsUpdating(false);
   };
 
   return (
@@ -90,36 +122,35 @@ export default function DashboardPage() {
               DASHBOARD<span className="text-cyan-400 not-italic">_IO</span>
             </h1>
           </div>
-          <div className="text-right hidden md:block">
-            <p className="text-slate-700 text-[10px] font-bold tracking-widest uppercase">
-              Be Smart // 2026
-            </p>
-          </div>
         </header>
 
         <div className="grid gap-4 mb-12">
-          {logs.map((log) => (
-            <div 
-              key={log.id} 
-              className="group bg-slate-900/50 border border-white/5 p-8 rounded-[2.5rem] flex justify-between items-center transition-all hover:bg-slate-900 hover:border-cyan-500/50"
-            >
-              <div>
-                <p className="text-cyan-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-2">
-                  Channel 0{log.id}
-                </p>
-                <h2 className="text-2xl font-bold text-slate-300 uppercase tracking-tight">
-                  {log.sensor_type || "Sensor Unit"}
-                </h2>
-              </div>
+          {logs.length === 0 ? (
+            <p className="text-slate-500 font-mono text-xs">Loading sensors from database...</p>
+          ) : (
+            logs.map((log) => (
+              <div 
+                key={log.id} 
+                className="group bg-slate-900/50 border border-white/5 p-8 rounded-[2.5rem] flex justify-between items-center transition-all hover:bg-slate-900 hover:border-cyan-500/50"
+              >
+                <div>
+                  <p className="text-cyan-500 text-[10px] font-mono font-bold uppercase tracking-widest mb-2">
+                    Channel 0{log.id}
+                  </p>
+                  <h2 className="text-2xl font-bold text-slate-300 uppercase tracking-tight">
+                    {log.sensor_type || "Unknown Unit"}
+                  </h2>
+                </div>
 
-              <div className="flex items-baseline gap-2">
-                <span className="text-7xl font-black tabular-nums transition-all duration-500 ease-out group-hover:text-cyan-400">
-                  {log.value}
-                </span>
-                <span className="text-xl font-bold text-slate-700">%</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-7xl font-black tabular-nums transition-all duration-500 ease-out group-hover:text-cyan-400">
+                    {log.value ?? 0}
+                  </span>
+                  <span className="text-xl font-bold text-slate-700">%</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         <div className="bg-slate-900/80 border border-cyan-500/20 p-8 rounded-[2.5rem] backdrop-blur-sm">
