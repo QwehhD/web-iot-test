@@ -1,5 +1,11 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
+:root {
+  --background: #ffffff;
+  /* ... sisa kode kamu ... */
+}
 :root {
   --background: #ffffff;
   --foreground: #171717;
