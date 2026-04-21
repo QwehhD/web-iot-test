@@ -13,6 +13,10 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [isUpdating, setIsUpdating] = useState(false);
+  
+  // Track last update time & value untuk throttling
+  const lastUpdateRef = { sensor: 0, rgb: 0 };
+  const lastValueRef = { sensor: null, rgb: null };
 
   useEffect(() => {
     // 1. Ambil Data Awal dari Supabase
@@ -52,21 +56,21 @@ export default function DashboardPage() {
       setStatus("ERROR");
     });
 
-    // 3. Logika Terima Pesan
+    // 3. Logika Terima Pesan dengan Throttle & Conditional
     mqttClient.on("message", async (topic, message) => {
       const rawPayload = message.toString();
-      console.log(`📩 Pesan masuk di [${topic}]`);
+      const now = Date.now();
 
       if (topic === "monitor/sensor/pot") {
         try {
           const data = JSON.parse(rawPayload);
           
-          // Validasi: value harus number dan 0-100
           if (typeof data.value !== "number" || data.value < 0 || data.value > 100) {
             console.warn("⚠️ Invalid sensor value:", data.value);
             return;
           }
           
+          // Update UI langsung (realtime)
           setLogs((prev) => {
             const updated = prev.map((item) => {
               const sensorType = (item.sensor_type || "").toLowerCase();
@@ -78,17 +82,29 @@ export default function DashboardPage() {
             return updated;
           });
 
-          // Simpan ke Supabase dengan updated_at
-          const { error } = await supabase
-            .from('sensor_logs')
-            .update({ 
-              value: data.value,
-              updated_at: new Date().toISOString()
-            })
-            .eq('sensor_type', 'Potensiometer');
-          
-          if (error) {
-            console.error("❌ Sensor save failed:", error.message);
+          // Hybrid logic: update DB hanya jika:
+          // 1. Sudah 20 menit (1200000 ms) sejak update terakhir, ATAU
+          // 2. Value berubah >10%
+          const timeSinceLastUpdate = now - lastUpdateRef.sensor;
+          const lastValue = lastValueRef.sensor;
+          const changePercent = lastValue !== null ? Math.abs(data.value - lastValue) / lastValue * 100 : 100;
+          const shouldUpdate = timeSinceLastUpdate > 1200000 || changePercent > 10;
+
+          if (shouldUpdate) {
+            const { error } = await supabase
+              .from('sensor_logs')
+              .update({ 
+                value: data.value,
+                updated_at: new Date().toISOString()
+              })
+              .eq('sensor_type', 'Potensiometer');
+            
+            if (!error) {
+              lastUpdateRef.sensor = now;
+              lastValueRef.sensor = data.value;
+            } else {
+              console.error("❌ Sensor save failed:", error.message);
+            }
           }
         } catch (e) {
           console.error("⚠️ Sensor parse error:", e);
@@ -97,7 +113,6 @@ export default function DashboardPage() {
         try {
           const data = JSON.parse(rawPayload);
           
-          // Validasi: RGB harus 0-255
           const isValidRGB = [data.red_val, data.green_val, data.blue_val].every(
             v => typeof v === "number" && v >= 0 && v <= 255
           );
@@ -107,19 +122,32 @@ export default function DashboardPage() {
             return;
           }
 
-          // Simpan RGB ke Supabase dengan updated_at
-          const { error } = await supabase
-            .from('actuators')
-            .update({
-              red_val: data.red_val,
-              green_val: data.green_val,
-              blue_val: data.blue_val,
-              updated_at: new Date().toISOString()
-            })
-            .eq('name', 'RGB_ESP32-S3');
-          
-          if (error) {
-            console.error("❌ RGB save failed:", error.message);
+          // Hybrid logic untuk RGB: 20 menit throttle
+          const timeSinceLastUpdate = now - lastUpdateRef.rgb;
+          const lastRGB = lastValueRef.rgb;
+          const rgbChanged = !lastRGB || 
+            data.red_val !== lastRGB.red || 
+            data.green_val !== lastRGB.green || 
+            data.blue_val !== lastRGB.blue;
+          const shouldUpdate = timeSinceLastUpdate > 1200000 || rgbChanged;
+
+          if (shouldUpdate) {
+            const { error } = await supabase
+              .from('actuators')
+              .update({
+                red_val: data.red_val,
+                green_val: data.green_val,
+                blue_val: data.blue_val,
+                updated_at: new Date().toISOString()
+              })
+              .eq('name', 'RGB_ESP32-S3');
+            
+            if (!error) {
+              lastUpdateRef.rgb = now;
+              lastValueRef.rgb = { red: data.red_val, green: data.green_val, blue: data.blue_val };
+            } else {
+              console.error("❌ RGB save failed:", error.message);
+            }
           }
         } catch (e) {
           console.error("⚠️ RGB parse error:", e);
