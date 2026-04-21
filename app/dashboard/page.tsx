@@ -41,38 +41,88 @@ export default function DashboardPage() {
     });
 
     mqttClient.on("connect", () => {
-      console.log("✅ MQTT Connected!");
+      console.log("✅ MQTT Connected");
       setStatus("SUBSCRIBED");
       mqttClient.subscribe("monitor/sensor/pot");
+      mqttClient.subscribe("monitor/actuator/rgb");
     });
 
     mqttClient.on("error", (err) => {
-      console.error("❌ MQTT Connection Error:", err);
+      console.error("❌ MQTT Error:", err.message);
       setStatus("ERROR");
     });
 
-    // 3. Logika Terima Pesan - DIPERBAIKI
-    mqttClient.on("message", (topic, message) => {
+    // 3. Logika Terima Pesan
+    mqttClient.on("message", async (topic, message) => {
       const rawPayload = message.toString();
-      console.log(`📩 Pesan masuk di [${topic}]:`, rawPayload);
+      console.log(`📩 Pesan masuk di [${topic}]`);
 
       if (topic === "monitor/sensor/pot") {
         try {
           const data = JSON.parse(rawPayload);
           
+          // Validasi: value harus number dan 0-100
+          if (typeof data.value !== "number" || data.value < 0 || data.value > 100) {
+            console.warn("⚠️ Invalid sensor value:", data.value);
+            return;
+          }
+          
           setLogs((prev) => {
-            return prev.map((item) => {
-              // Pakai .toLowerCase() & .trim() supaya aman dari salah ketik di database
-              const dbSensorType = (item.sensor_type || "").toLowerCase().trim();
-              if (dbSensorType === "potentiometer") {
-                console.log("🎯 Match! Mengupdate UI ke:", data.value);
+            const updated = prev.map((item) => {
+              const sensorType = (item.sensor_type || "").toLowerCase();
+              if (sensorType === "potensiometer") {
                 return { ...item, value: data.value };
               }
               return item;
             });
+            return updated;
           });
+
+          // Simpan ke Supabase dengan updated_at
+          const { error } = await supabase
+            .from('sensor_logs')
+            .update({ 
+              value: data.value,
+              updated_at: new Date().toISOString()
+            })
+            .eq('sensor_type', 'Potensiometer');
+          
+          if (error) {
+            console.error("❌ Sensor save failed:", error.message);
+          }
         } catch (e) {
-          console.error("⚠️ Format pesan bukan JSON valid:", rawPayload);
+          console.error("⚠️ Sensor parse error:", e);
+        }
+      } else if (topic === "monitor/actuator/rgb") {
+        try {
+          const data = JSON.parse(rawPayload);
+          
+          // Validasi: RGB harus 0-255
+          const isValidRGB = [data.red_val, data.green_val, data.blue_val].every(
+            v => typeof v === "number" && v >= 0 && v <= 255
+          );
+          
+          if (!isValidRGB) {
+            console.warn("⚠️ Invalid RGB values:", data);
+            return;
+          }
+
+          // Simpan RGB ke Supabase dengan updated_at
+          const { error } = await supabase
+            .from('actuators')
+            .update({
+              red_val: data.red_val,
+              green_val: data.green_val,
+              blue_val: data.blue_val,
+              updated_at: new Date().toISOString()
+            })
+            .eq('name', 'RGB_ESP32-S3');
+          
+          if (error) {
+            console.error("❌ RGB save failed:", error.message);
+          }
+        } catch (e) {
+          console.error("⚠️ RGB parse error:", e);
         }
       }
     });
@@ -104,7 +154,7 @@ export default function DashboardPage() {
       });
       
       if (!res.ok) throw new Error(`Server Error: ${res.status}`);
-      console.log("✅ RGB Published successfully");
+      console.log("✅ RGB Published");
     } catch (error) {
       console.error("❌ RGB Publish Error:", error);
     } finally {
