@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mqtt from 'mqtt';
 
 const supabase = createClient(
@@ -14,9 +14,9 @@ export default function DashboardPage() {
   const [status, setStatus] = useState("Connecting...");
   const [isUpdating, setIsUpdating] = useState(false);
   
-  // Track last update time & value untuk throttling
-  const lastUpdateRef = { sensor: 0, rgb: 0 };
-  const lastValueRef = { sensor: null, rgb: null };
+  // Track last update time & value untuk throttling (persist across renders)
+  const lastUpdateRef = useRef({ sensor: 0, rgb: 0 });
+  const lastValueRef = useRef({ sensor: null as number | null, rgb: null as any });
 
   useEffect(() => {
     // 1. Ambil Data Awal dari Supabase
@@ -85,8 +85,8 @@ export default function DashboardPage() {
           // Hybrid logic: update DB hanya jika:
           // 1. Sudah 20 menit (1200000 ms) sejak update terakhir, ATAU
           // 2. Value berubah >10%
-          const timeSinceLastUpdate = now - lastUpdateRef.sensor;
-          const lastValue = lastValueRef.sensor;
+          const timeSinceLastUpdate = now - lastUpdateRef.current.sensor;
+          const lastValue = lastValueRef.current.sensor;
           const changePercent = lastValue !== null ? Math.abs(data.value - lastValue) / lastValue * 100 : 100;
           const shouldUpdate = timeSinceLastUpdate > 1200000 || changePercent > 10;
 
@@ -100,8 +100,8 @@ export default function DashboardPage() {
               .eq('sensor_type', 'Potensiometer');
             
             if (!error) {
-              lastUpdateRef.sensor = now;
-              lastValueRef.sensor = data.value;
+              lastUpdateRef.current.sensor = now;
+              lastValueRef.current.sensor = data.value;
             } else {
               console.error("❌ Sensor save failed:", error.message);
             }
@@ -123,8 +123,8 @@ export default function DashboardPage() {
           }
 
           // Hybrid logic untuk RGB: 20 menit throttle
-          const timeSinceLastUpdate = now - lastUpdateRef.rgb;
-          const lastRGB = lastValueRef.rgb;
+          const timeSinceLastUpdate = now - lastUpdateRef.current.rgb;
+          const lastRGB = lastValueRef.current.rgb;
           const rgbChanged = !lastRGB || 
             data.red_val !== lastRGB.red || 
             data.green_val !== lastRGB.green || 
@@ -143,8 +143,8 @@ export default function DashboardPage() {
               .eq('name', 'RGB_ESP32-S3');
             
             if (!error) {
-              lastUpdateRef.rgb = now;
-              lastValueRef.rgb = { red: data.red_val, green: data.green_val, blue: data.blue_val };
+              lastUpdateRef.current.rgb = now;
+              lastValueRef.current.rgb = { red: data.red_val, green: data.green_val, blue: data.blue_val };
             } else {
               console.error("❌ RGB save failed:", error.message);
             }
