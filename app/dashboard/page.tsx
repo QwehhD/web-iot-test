@@ -17,6 +17,9 @@ export default function DashboardPage() {
   // Track last update time & value untuk throttling (persist across renders)
   const lastUpdateRef = useRef({ sensor: 0, rgb: 0 });
   const lastValueRef = useRef({ sensor: null as number | null, rgb: null as any });
+  
+  // Rate limit color picker (max 1x per second)
+  const lastColorPublishRef = useRef(0);
 
   useEffect(() => {
     // 1. Ambil Data Awal dari Supabase
@@ -163,6 +166,13 @@ export default function DashboardPage() {
   const handleColorChange = async (hex: string) => {
     if (!hex.startsWith('#')) return;
 
+    // Rate limit: hanya bisa publish 1x per detik
+    const now = Date.now();
+    if (now - lastColorPublishRef.current < 1000) {
+      console.log("⏱️ Rate limited - please wait");
+      return;
+    }
+
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
@@ -170,8 +180,6 @@ export default function DashboardPage() {
     setIsUpdating(true);
     
     try {
-      // PERINGATAN: Pastikan API Route kamu sudah menggunakan 
-      // variabel env TANPA NEXT_PUBLIC_ agar tidak Error 500
       const res = await fetch("/api/mqtt/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -182,6 +190,7 @@ export default function DashboardPage() {
       });
       
       if (!res.ok) throw new Error(`Server Error: ${res.status}`);
+      lastColorPublishRef.current = now;
       console.log("✅ RGB Published");
     } catch (error) {
       console.error("❌ RGB Publish Error:", error);
