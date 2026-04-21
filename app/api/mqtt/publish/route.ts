@@ -5,9 +5,9 @@ export async function POST(req: Request) {
   try {
     const { topic, message } = await req.json();
 
-    const client = await mqtt.connectAsync(process.env.NEXT_PUBLIC_MQTT_URL!, {
-      username: process.env.NEXT_PUBLIC_MQTT_USER,
-      password: process.env.MQTT_PASS,
+    const client = await mqtt.connectAsync(process.env.MQTT_URL!, {
+      username: process.env.MQTT_USER,
+      password: process.env.MQTT_PASSWORD,
     });
 
     await client.publish(topic, JSON.stringify(message));
